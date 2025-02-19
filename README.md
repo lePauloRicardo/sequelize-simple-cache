@@ -1,5 +1,5 @@
 
-# @lePauloRicardo/sequelize-simple-cache
+# @lepauloricardo/sequelize-simple-cache
 
 
 ## Overview
@@ -15,7 +15,7 @@ This library is not actively maintained, so use it at your own risk.
 ## Installation
 
 ```bash
-npm install @lePauloRicardo/sequelize-simple-cache
+npm install @lepauloricardo/sequelize-simple-cache
 ```
 
 ## Usage
@@ -24,7 +24,7 @@ Set up the cache and load your Sequelize models like this:
 
 ```javascript
 const Sequelize = require('sequelize');
-const SequelizeSimpleCache = require('@lePauloRicardo/sequelize-simple-cache');
+const SequelizeSimpleCache = require('@lepauloricardo/sequelize-simple-cache');
 
 // create db connection
 const sequelize = new Sequelize('database', 'username', 'password', { ... });
