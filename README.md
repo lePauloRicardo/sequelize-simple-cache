@@ -1,50 +1,30 @@
-# sequelize-simple-cache
 
-This is a simple, transparent, client-side, in-memory cache for [Sequelize](https://github.com/sequelize/sequelize).
-Cache invalidation is based on time-to-live (ttl).
-Selectively add your Sequelize models to the cache.
-Works with all storage engines supported by Sequelize.
+# @lePauloRicardo/sequelize-simple-cache
 
-![main workflow](https://github.com/funny-bytes/sequelize-simple-cache/actions/workflows/main.yml/badge.svg)
-[![Coverage Status](https://coveralls.io/repos/github/funny-bytes/sequelize-simple-cache/badge.svg?branch=master)](https://coveralls.io/github/funny-bytes/sequelize-simple-cache?branch=master)
-[![Dependencies Status](https://david-dm.org/funny-bytes/sequelize-simple-cache.svg)](https://david-dm.org/funny-bytes/sequelize-simple-cache)
-[![Maintainability](https://api.codeclimate.com/v1/badges/c8bdb1fc29ef12070cac/maintainability)](https://codeclimate.com/github/funny-bytes/sequelize-simple-cache/maintainability)
-[![node](https://img.shields.io/node/v/sequelize-simple-cache.svg)]()
-[![code style](https://img.shields.io/badge/code_style-airbnb-brightgreen.svg)](https://github.com/airbnb/javascript)
-[![Types](https://img.shields.io/npm/types/sequelize-simple-cache.svg)](https://www.npmjs.com/package/sequelize-simple-cache)
-[![License Status](http://img.shields.io/npm/l/sequelize-simple-cache.svg)]()
 
-This cache might work for you if you have database tables that
-(1) are frequently read but very rarely written and
-(2) contain only few rows of data.
+## Overview
 
-In a project, we had a couple of database tables with a sort of configuration.
-Something like 4 or 5 tables with some 10 rows of data.
-Nearly every request needed this data, i.e., it was read all the time.
-But updated only very rarely, e.g, once a day.
-So, pre-fetching or simple in-memory caching would work for us.
+This is a fork of [sequelize-simple-cache](https://github.com/funny-bytes/sequelize-simple-cache)
 
-If that's not matching your scenario,
-better look for something more sophisticated such as Redis or Memcached.
+In this fork, I have added support for associations when clearing the cache.
+This works in my specific configuration, and no additional tests were added.
+This library is not actively maintained, so use it at your own risk.
 
-Tested with
 
-* Sequelize 6, Node 12/14/15, integration tested with Postgres 11/12 (via pg 8) and sqlite3 v5 (memory)
-* Sequelize 5, Node 10/12/13, integration tested with Postgres 10/11 (via pg 7) and sqlite3 v4 (memory)
 
-## Install
+## Installation
 
 ```bash
-npm install sequelize-simple-cache
+npm install @lePauloRicardo/sequelize-simple-cache
 ```
 
 ## Usage
 
-Setup the cache along with loading your Sequelize models like this:
+Set up the cache and load your Sequelize models like this:
 
 ```javascript
 const Sequelize = require('sequelize');
-const SequelizeSimpleCache = require('sequelize-simple-cache');
+const SequelizeSimpleCache = require('@lePauloRicardo/sequelize-simple-cache');
 
 // create db connection
 const sequelize = new Sequelize('database', 'username', 'password', { ... });
@@ -56,21 +36,19 @@ const cache = new SequelizeSimpleCache({
 });
 
 // assuming you have your models in separate files with "model definers"
-// -- e.g, see below or https://github.com/sequelize/express-example --
 // add your models to the cache like this
 const User = cache.init(require('./models/user')(sequelize));
 const Page = cache.init(require('./models/page')(sequelize));
 
 // no caching for this one (because it's not configured to be cached)
-// will only add dummy decorators to the model for a homogeneous interface to all models
 const Order = cache.init(require('./models/order')(sequelize));
 
-// the Sequelize model API is fully transparent, no need to change anything.
-// first time resolved from database, subsequent times from local cache.
+// Sequelize model API is fully transparent, no need to change anything.
+// first time resolved from the database, subsequent times from the cache.
 const fred = await User.findOne({ where: { name: 'fred' }});
 ```
 
-`./models/user.js` might look like this:
+Example model definition:
 
 ```javascript
 const { Model } = require('sequelize');
@@ -78,71 +56,58 @@ class User extends Model {}
 module.exports = (sequelize) => User.init({ /* attributes */ }, { sequelize });
 ```
 
-Please note that `SequelizeSimpleCache` refers to Sequelize **models by name**.
-The model name is usually equals the class name (e.g., `class User extends Model {}` &#8594; `User`).
-Unless it is specified differently in the model options' `modelName` property
-(e.g., `User.init({ /* attributes */ }, { sequelize, modelName: 'Foo' })` &#8594; `Foo`).
-The same is true if you are using `sequelize.define()` to define your models.
+Note: `SequelizeSimpleCache` refers to Sequelize **models by name**.
+By default, the model name is equal to the class name (e.g., `User` for `class User extends Model {}`).
 
-## More Details
+## Key Features
 
 ### Supported methods
 
-The following methods on Sequelize model instances are supported for caching:
-`findOne`, `findAndCountAll`, `findByPk`, `findAll`, `count`, `min`, `max`, `sum`.
-In addition, for Sequelize v4: `find`, `findAndCount`, `findById`, `findByPrimary`, `all`.
+The following methods are supported for caching:
+- `findOne`, `findAndCountAll`, `findByPk`, `findAll`, `count`, `min`, `max`, `sum`.
+- For Sequelize v4: `find`, `findAndCount`, `findById`, `findByPrimary`, `all`.
 
-### Non-cacheable queries / bypass caching
+### Bypass caching
 
-You need to avoid non-cacheable queries, e.g., queries containing dynamic timestamps.
+To bypass the cache for a specific query:
 
 ```javascript
-const { Op, fn } = require('sequelize');
-// this is not good
-Model.findAll({ where: { startDate: { [Op.lte]: new Date() }, } });
-// you should do it this way
-Model.findAll({ where: { startDate: { [Op.lte]: fn('NOW') }, } });
-// if you don't want a query to be cached, you may explicitly bypass the cache like this
-Model.noCache().findAll(/* ... */);
-// transactions enforce bypassing the cache, e.g.:
-Model.findOne({ where: { name: 'foo' }, transaction: t, lock: true });
+Model.noCache().findOne(/* ... */);
 ```
 
-### Time-to-live (ttl)
+### Time-to-live (TTL)
 
-Each model has its individual time-to-live (ttl), i.e.,
-all database requests on a model are cached for a particular number of seconds.
-Default is one hour.
-For eternal caching, i.e., no automatic cache invalidation, simply set the model's `ttl` to `false` (or any number less or equals `0`).
+Each model has an individual TTL, i.e., all database requests for a model are cached for a specific number of seconds. The default TTL is one hour.
+
+For eternal caching (no TTL), set the model's `ttl` to `false` or any number less than or equal to `0`.
 
 ```javascript
 const cache = new SequelizeSimpleCache({
   User: { ttl: 5 * 60 }, // 5 minutes
-  Page: { }, // default ttl is 1 hour
-  Foo: { ttl: false } // cache forever
+  Page: { ttl: false }, // cache forever
 });
 ```
 
-### Clear cache
+### Clear Cache
 
-There are these ways to clear the cache.
+You can clear the cache in several ways:
 
 ```javascript
 const cache = new SequelizeSimpleCache({ /* ... */ });
-// clear all
+// clear all caches
 cache.clear();
-// clear all entries of specific models
+// clear specific models
 cache.clear('User', 'Page');
-// or do the same on any model
-Model.clearCache(); // only model
-Model.clearCacheAll(); // entire cache
+// clear a single model's cache
+Model.clearCache();
+// clear all model caches
+Model.clearCacheAll();
 ```
 
-By default, the model's cache is automatically cleared if these methods are called:
-`update`, `create`, `upsert`, `destroy`, `findOrBuild`.
-In addition, for Sequelize v4: `insertOrUpdate`, `findOrInitialize`, `updateAttributes`.
+By default, the cache is cleared automatically after the following actions:
+- `update`, `create`, `upsert`, `destroy`, `findOrBuild`.
 
-You can change this default behavior like this:
+You can customize this behavior:
 
 ```javascript
 const cache = new SequelizeSimpleCache({
@@ -151,21 +116,9 @@ const cache = new SequelizeSimpleCache({
 });
 ```
 
-If you run multiple instances (clients or containers or PODs or alike),
-be aware that cache invalidation is more complex that the above simple approach.
+### Limit Cache Size
 
-### Bypass caching
-
-Caching can explicitly be bypassed like this:
-
-```javascript
-Model.noCache().findOne(/* ... */);
-```
-
-### Limit
-
-This cache is meant as a simple in-memory cache for a very limited amount of data.
-So, you should be able to control the size of the cache.
+This cache is designed for small datasets. You can set limits for the cache size.
 
 ```javascript
 const cache = new SequelizeSimpleCache({
@@ -176,9 +129,7 @@ const cache = new SequelizeSimpleCache({
 
 ### Logging
 
-There is "debug" and "ops" logging -- both are off by default.
-Logging goes to `console.debug()` unless you set `delegate` to log somewhere else.
-`event` is one of: `init`, `hit`, `miss`, `load`, `purge` or `ops`.
+You can enable logging for cache events:
 
 ```javascript
 const cache = new SequelizeSimpleCache({
@@ -190,77 +141,32 @@ const cache = new SequelizeSimpleCache({
 });
 ```
 
-### Unit testing
+### Unit Testing
 
-If you are mocking your Sequelize models in unit tests with [Sinon](https://sinonjs.org/) et al.,
-caching might be somewhat counterproductive.
-So, either clear the cache as needed in your unit tests. For example (using [mocha](https://mochajs.org/)):
+If you mock your Sequelize models in unit tests, you can clear the cache as needed:
 
 ```javascript
 describe('My Test Suite', () => {
   beforeEach(() => {
-    Model.clearCacheAll(); // on any model with the same effect
+    Model.clearCacheAll();
   });
   // ...
+});
 ```
 
-Or disable the cache right from the beginning.
-A quick idea... have a specific config value in your project's `/config/default.js`
-and `/config/test.js` to enable or disable the cache respectively.
-And start your unit tests with setting `NODE_ENV=test` before.
-This is actually the way I am doing it; plus a few extra unit tests for caching.
+Or disable caching entirely during tests:
 
 ```javascript
 const config = require('config');
 const useCache = config.get('database.cache');
-// initializing the cache
 const cache = useCache ? new SequelizeSimpleCache({/* ... */}) : undefined;
-// loading the models
-const model = require('./models/model')(sequelize);
-const Model = useCache ? cache.init(model) : model;
 ```
 
 ## TypeScript Support
 
-`SequelizeSimpleCache` includes type definitions for TypeScript.
-They are based on the [Sequelize types](https://sequelize.org/master/manual/typescript.html).
+`SequelizeSimpleCache` includes TypeScript definitions.
 
-For this module to work, your **TypeScript compiler options** must include
-`"target": "ES2015"` (or later), `"moduleResolution": "node"`, and
-`"esModuleInterop": true`.
-
-A quick example:
-
-```typescript
-import { Sequelize, Model, DataTypes } from "sequelize";
-import SequelizeSimpleCache from "sequelize-simple-cache";
-
-interface UserAttributes {
-  id: number;
-  name: string;
-}
-
-class User extends Model<UserAttributes> implements UserAttributes {
-  public id!: number;
-  public name!: string;
-}
-
-// create db connection
-const sequelize = new Sequelize(/* ... */);
-
-// initialize models
-User.init({ /* attributes */ }, { sequelize, tableName: 'users' });
-
-// create cache -- referring to Sequelize models by name, e.g., `User`
-const cache = new SequelizeSimpleCache({
-  [User.name]: { ttl: 5 * 60 }, // 5 minutes
-  'Foo': {}, // default ttl is 1 hour
-});
-
-// add User model to the cache
-const UserCached = cache.init<User>(User);
-
-// the Sequelize model API is fully transparent, no need to change anything.
-// first time resolved from database, subsequent times from local cache.
-const fred = await UserCached.findOne({ where: { name: 'fred' }});
-```
+To use this module with TypeScript, ensure your compiler options include:
+- `"target": "ES2015"` (or later),
+- `"moduleResolution": "node"`,
+- `"esModuleInterop": true`.
