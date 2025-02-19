@@ -11,6 +11,9 @@ This works in my specific configuration, and no additional tests were added.
 This library is not actively maintained, so use it at your own risk.
 
 
+![main workflow](https://github.com/lePauloRicardo/sequelize-simple-cache/actions/workflows/main.yml/badge.svg)
+
+
 
 ## Installation
 
