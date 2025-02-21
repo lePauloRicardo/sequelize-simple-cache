@@ -88,7 +88,11 @@ class SequelizeSimpleCache {
     // Unfortunately, there seem to be no stringify or object hashes that work correctly
     // with ES6 symbols and function objects. But this is important for Sequelize queries.
     // This is the only solution that seems to be working.
-    return inspect(obj, { depth: Infinity, maxArrayLength: Infinity, breakLength: Infinity });
+    return inspect(obj, {
+      depth: Infinity,
+      maxArrayLength: Infinity,
+      breakLength: Infinity,
+    });
   }
 
   init(model) {
@@ -106,30 +110,19 @@ class SequelizeSimpleCache {
     // Return proxy to intercept Sequelize methods and cache decorators
     return new Proxy(model, {
       get: (target, prop) => {
-        // --- Alterado ---
-        // Intercept the associate method to register associations after it's called.
         if (prop === 'associate' && typeof target[prop] === 'function') {
-          const origAssociate = target[prop];
-          return (...args) => {
-            const result = origAssociate.apply(target, args);
-            // After associate is called, associations should be available
-            if (target.associations) {
-              const associatedTypes = Object.values(target.associations)
-                .map((association) => association.target && association.target.name)
-                .filter(Boolean);
-              if (associatedTypes.length > 0) {
-                this.associations.set(target.name, associatedTypes);
-              }
-            }
-            return result;
-          };
+          return this._wrapAssociateMethod(target);
         }
-        // --- Fim da alteração ---
-
         // caching interface on model
-        if (prop === 'noCache') return () => model;
-        if (prop === 'clearCache') return () => this.clear(type);
-        if (prop === 'clearCacheAll') return () => this.clear();
+        if (prop === 'noCache') {
+          return () => model;
+        }
+        if (prop === 'clearCache') {
+          return () => this.clear(type);
+        }
+        if (prop === 'clearCacheAll') {
+          return () => this.clear();
+        }
         // no caching for this model
         if (!config) {
           return target[prop];
@@ -154,25 +147,43 @@ class SequelizeSimpleCache {
             assert(promise.then, `${type}.${prop}() did not return a promise but should`);
             return promise;
           }
-          const key = SequelizeSimpleCache.key({ type, prop, args });
+          const key = SequelizeSimpleCache.key({
+            type,
+            prop,
+            args,
+          });
           const hash = crypto.createHash('md5').update(key).digest('hex');
           const item = cache.get(hash);
           if (item) {
             // hit
             const { data, expires } = item;
             if (!expires || expires > Date.now()) {
-              this.log('hit', { key, hash, expires });
+              this.log('hit', {
+                key,
+                hash,
+                expires,
+              });
               return data; // resolve from cache
             }
           }
-          this.log('miss', { key, hash });
+          this.log('miss', {
+            key,
+            hash,
+          });
           const promise = target[prop](...args);
           assert(promise.then, `${type}.${prop}() did not return a promise but should`);
           return promise.then((data) => {
             if (data !== undefined && data !== null) {
               const expires = ttl > 0 ? Date.now() + ttl * 1000 : false;
-              cache.set(hash, { data, expires });
-              this.log('load', { key, hash, expires });
+              cache.set(hash, {
+                data,
+                expires,
+              });
+              this.log('load', {
+                key,
+                hash,
+                expires,
+              });
               if (cache.size > limit) {
                 this.purge(type);
               }
@@ -241,9 +252,15 @@ class SequelizeSimpleCache {
       cache.forEach(({ expires }, hash) => {
         if (expires && expires <= now) {
           cache.delete(hash);
-          this.log('purge', { hash, expires });
+          this.log('purge', {
+            hash,
+            expires,
+          });
         } else if (!oldest || expires < oldest.expires) {
-          oldest = { hash, expires };
+          oldest = {
+            hash,
+            expires,
+          };
         }
       });
       const { limit } = this.config[type];
@@ -266,12 +283,56 @@ class SequelizeSimpleCache {
       ...this.stats,
       ratio: this.stats.hit / (this.stats.hit + this.stats.miss),
       size: Object.entries(this.cache).reduce(
-        (acc, [type, map]) => ({ ...acc, [type]: map.size }),
+        (acc, [type, map]) => ({
+          ...acc,
+          [type]: map.size,
+        }),
         {}
       ),
     });
   }
-}
 
+  _wrapAssociateMethod(target) {
+    const originalAssociate = target.associate;
+
+    return (...args) => {
+      // Calls the original Associate method
+      const result = originalAssociate.apply(target, args);
+
+      // After associate is called, associations should be available
+      this._registerAssociations(target);
+
+      return result;
+    };
+  }
+
+  _registerAssociations(target) {
+    if (!target.associations) return;
+
+    const associatedModels = Object.values(target.associations)
+      .map((association) => association.target?.name)
+      .filter(Boolean);
+
+    if (associatedModels.length === 0) return;
+
+    this._addAssociations(target.name, associatedModels);
+    this._addReverseAssociations(target.name, associatedModels);
+  }
+
+  _addAssociations(modelName, associatedModels) {
+    this.associations.set(modelName, associatedModels);
+  }
+
+  _addReverseAssociations(modelName, associatedModels) {
+    for (const associatedModel of associatedModels) {
+      if (!this.associations.has(associatedModel)) {
+        this.associations.set(associatedModel, []);
+      }
+      if (!this.associations.get(associatedModel).includes(modelName)) {
+        this.associations.get(associatedModel).push(modelName);
+      }
+    }
+  }
+}
 
 module.exports = SequelizeSimpleCache;
