@@ -140,7 +140,7 @@ class SequelizeSimpleCache {
           return result;
         }
         const fn = async (...args) => {
-          const withinTxn = args.reduce((acc, { transaction }) => acc || transaction, false);
+          const withinTxn = args.reduce((acc, { transaction } = {}) => acc || transaction, false);
           if (withinTxn) {
             // bypass cache
             const promise = target[prop](...args);

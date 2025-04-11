@@ -1,6 +1,6 @@
 {
   "name": "@lepauloricardo/sequelize-simple-cache",
-  "version": "0.0.2",
+  "version": "0.0.3",
   "description": "A simple, transparent, client-side, in-memory cache for Sequelize (Fork de funny-bytes/sequelize-simple-cache)",
   "main": "src/index.js",
   "types": "src/index.d.ts",
